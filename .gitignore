@@ -3,6 +3,8 @@ venv/
 
 # Ignore the large dataset log
 hpc_rag.log
+sample_hpc_rag.log
+temp.log
 
 # Ignore generated output files
 metrics_output.txt

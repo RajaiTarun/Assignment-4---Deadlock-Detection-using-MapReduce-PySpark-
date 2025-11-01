@@ -59,17 +59,34 @@ def extend_paths(path, adj_dict):
             extensions.append(path + [neighbor])
     return extensions
 
+# def normalize_cycle(cycle):
+#     """
+#     Rotate cycle so that the smallest node (lexicographically) is first.
+#     This helps deduplicate cycles that are the same but start at different nodes.
+#     """
+#     cycle = list(cycle)
+#     n = len(cycle)
+#     # Find the index of the smallest node
+#     min_index = min(range(n), key=lambda i: cycle[i])
+#     # Rotate
+#     normalized = cycle[min_index:] + cycle[:min_index]
+#     return tuple(normalized)
+
 def normalize_cycle(cycle):
     """
     Rotate cycle so that the smallest node (lexicographically) is first.
     This helps deduplicate cycles that are the same but start at different nodes.
     """
-    cycle = list(cycle)
-    n = len(cycle)
+    # The 'cycle' tuple includes the repeated start node (e.g., A->B->A)
+    # We must remove that repeated node before normalizing.
+    nodes_in_cycle = list(cycle)[:-1]
+    
+    n = len(nodes_in_cycle)
     # Find the index of the smallest node
-    min_index = min(range(n), key=lambda i: cycle[i])
-    # Rotate
-    normalized = cycle[min_index:] + cycle[:min_index]
+    min_index = min(range(n), key=lambda i: nodes_in_cycle[i])
+    
+    # Rotate the list *without* the repeated node
+    normalized = nodes_in_cycle[min_index:] + nodes_in_cycle[:min_index]
     return tuple(normalized)
 
 def main():
@@ -127,7 +144,11 @@ def main():
 
     # 2️⃣ Initialize paths as direct edges
     # Each path is a list of nodes [source, destination]
-    paths_rdd = edges_rdd.map(lambda x: [x[0], x[1]])
+    # paths_rdd = edges_rdd.map(lambda x: [x[0], x[1]])
+
+    # changing path_rdd logic
+    paths_rdd = edges_rdd.filter(lambda x: x[0].startswith("P")).map(lambda x: [x[0], x[1]])
+
 
     # Max path length to prevent infinite loops
     # ⚠️ Note: This approach works if the graph isn’t huge (≤50,000 edges). For a true MapReduce scalable solution, we would propagate paths using RDD transformations instead of collecting everything locally. But for assignment purposes, this logic is enough and simpler to debug.
@@ -135,28 +156,61 @@ def main():
     MAX_PATH_LEN = 25
 
     # Convert adjacency RDD to dictionary for efficient lookup
-    adj_dict = dict(adj_rdd.collect())  # small enough for local usage
+    # adj_dict = dict(adj_rdd.collect())  # small enough for local usage
+    # changing
+    adj_rdd = edges_rdd.groupByKey().mapValues(lambda lst: list(set(lst)))
+    adj_dict = dict(adj_rdd.collect())
 
     # Initialize paths with direct edges
-    current_paths = paths_rdd.collect()  # list of lists
+    # current_paths = paths_rdd.collect()  # list of lists
 
-    all_cycles = set()  # to store detected cycles as tuples
+    # all_cycles = set()  # to store detected cycles as tuples
+
+    # for step in range(MAX_PATH_LEN):
+    #     new_paths = []
+    #     for path in current_paths:
+    #         last_node = path[-1]
+    #         if last_node in adj_dict:
+    #             for neighbor in adj_dict[last_node]:
+    #                 if neighbor == path[0]:
+    #                     # Cycle detected
+    #                     all_cycles.add(tuple(path + [neighbor]))
+    #                 elif neighbor not in path:
+    #                     new_paths.append(path + [neighbor])
+    #     # Stop if no new paths to extend
+    #     if not new_paths:
+    #         break
+    #     current_paths = new_paths
+    all_cycles = set()
+    current_paths = paths_rdd.collect()  # list of lists
 
     for step in range(MAX_PATH_LEN):
         new_paths = []
+        # for path in current_paths:
+        #     last_node = path[-1]
+        #     for neighbor in adj_dict.get(last_node, []):
+        #         if neighbor == path[0]:
+        #             # Cycle completed → add it
+        #             all_cycles.add(tuple(path + [neighbor]))
+        #             # Do NOT extend further
+        #         elif neighbor not in path:
+        #             # Only extend if neighbor is NOT in path at all
+        #             new_paths.append(path + [neighbor])
         for path in current_paths:
             last_node = path[-1]
-            if last_node in adj_dict:
-                for neighbor in adj_dict[last_node]:
-                    if neighbor == path[0]:
-                        # Cycle detected
-                        all_cycles.add(tuple(path + [neighbor]))
-                    elif neighbor not in path:
-                        new_paths.append(path + [neighbor])
-        # Stop if no new paths to extend
+            for neighbor in adj_dict.get(last_node, []):
+                if neighbor == path[0]:
+                    # Completed cycle → add it
+                    all_cycles.add(tuple(path + [neighbor]))
+                    # Do NOT extend this path
+                elif neighbor not in path:
+                    # Safe to extend
+                    new_paths.append(path + [neighbor])
+                # If neighbor is in path but not start → skip it (prevents internal repeats)
         if not new_paths:
             break
         current_paths = new_paths
+        # print(f"Step {step}, paths: {current_paths}")
 
     print(f"Total raw cycles found: {len(all_cycles)}")
 
@@ -175,6 +229,22 @@ def main():
     # Print each cycle in the required format (space-separated)
     for cycle in unique_cycles:
         print(" ".join(cycle))
+
+    # Flatten all cycles and keep only process IDs
+    process_set = set()
+    for cycle in unique_cycles:
+        for node in cycle:
+            if node.startswith("P"):
+                process_set.add(node)
+
+    # Sort alphabetically
+    sorted_processes = sorted(process_set)
+
+    # Print total unique process count
+    print(len(sorted_processes))
+
+    # Print all process IDs in required format
+    print(" ".join(sorted_processes))
 
     # 4️⃣ Metrics reporting placeholder
     # TODO: Phase 4 & 5
