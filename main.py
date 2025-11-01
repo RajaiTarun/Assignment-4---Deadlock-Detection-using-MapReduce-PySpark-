@@ -2,6 +2,7 @@
 import time
 from pyspark import SparkContext, SparkConf
 import os
+from collections import Counter
 
 def parse_line(line):
     parts = line.strip().split()
@@ -21,17 +22,34 @@ def parse_line(line):
     return timestamp, action, process_id, resource_id
 
 
+# def create_edge(entry):
+#     """
+#     Converts a log entry into a directed edge for RAG.
+#     WAIT: Process → Resource
+#     HOLD: Resource → Process
+#     """
+#     timestamp, level, process_id, resource_id = entry
+#     if level.upper() == "WAIT":
+#         return (process_id, resource_id)
+#     elif level.upper() == "HOLD":
+#         return (resource_id, process_id)
+#     else:
+#         return None
+
+# phase 4 modification
 def create_edge(entry):
     """
     Converts a log entry into a directed edge for RAG.
     WAIT: Process → Resource
     HOLD: Resource → Process
+    
+    # MODIFIED: Now returns ((Edge), Timestamp)
     """
     timestamp, level, process_id, resource_id = entry
     if level.upper() == "WAIT":
-        return (process_id, resource_id)
+        return ((process_id, resource_id), timestamp)
     elif level.upper() == "HOLD":
-        return (resource_id, process_id)
+        return ((resource_id, process_id), timestamp)
     else:
         return None
     
@@ -91,7 +109,12 @@ def main():
     # print(f"Total lines in log file: {lines_rdd.count()}")
 
     parsed_rdd = lines_rdd.map(parse_line).filter(lambda x: x is not None)
-    edges_rdd = parsed_rdd.map(create_edge).filter(lambda x: x is not None).distinct()
+    #phase 4 modification
+    timestamped_edges_rdd = parsed_rdd.map(create_edge).filter(lambda x: x is not None)
+    # [cite_start]# [cite: 35]
+    edge_with_latest_timestamp_rdd = timestamped_edges_rdd.reduceByKey(lambda ts1, ts2: max(ts1, ts2))
+    # edges_rdd = parsed_rdd.map(create_edge).filter(lambda x: x is not None).distinct()
+    edges_rdd = edge_with_latest_timestamp_rdd.keys().distinct()
 
     # Extract all nodes
     nodes_rdd = edges_rdd.flatMap(lambda x: x)
@@ -186,6 +209,52 @@ def main():
 
     # 4️⃣ Metrics reporting placeholder
     # TODO: Phase 4 & 5
+    # === NEW: Add this block for Phase 4.1 (Q3.1) ===
+
+    # 4️⃣ Deadlock Timeline (Q3.1)
+    
+    # Collect the edge-timestamp map for local lookup
+    # This is efficient as the number of unique edges (~1638) is small
+    edge_timestamp_map = dict(edge_with_latest_timestamp_rdd.collect())
+
+    formation_dates = []
+    
+    for cycle in unique_cycles:
+        latest_ts_in_cycle = "" # Use empty string as smallest timestamp
+        
+        # Recreate the edges from the normalized cycle
+        # (P1, R1, P2) -> edges (P1, R1), (R1, P2), (P2, P1)
+        cycle_nodes = list(cycle)
+        
+        for i in range(len(cycle_nodes)):
+            source = cycle_nodes[i]
+            # Get dest, wrapping around to the start for the last edge
+            dest = cycle_nodes[(i + 1) % len(cycle_nodes)]
+            edge = (source, dest)
+            
+            # Find the latest timestamp for this edge
+            edge_ts = edge_timestamp_map.get(edge)
+            
+            # [cite_start]Find the max (latest) timestamp among all edges in this cycle [cite: 35]
+            if edge_ts and edge_ts > latest_ts_in_cycle:
+                latest_ts_in_cycle = edge_ts
+        
+        # The formation timestamp is the latest one; extract just the date
+        if latest_ts_in_cycle:
+            formation_date = latest_ts_in_cycle.split()[0]
+            formation_dates.append(formation_date)
+
+    # [cite_start]Count the frequencies of each date [cite: 36]
+    date_counts = Counter(formation_dates)
+    
+    # [cite_start]Sort by date (chronologically) [cite: 111]
+    sorted_date_counts = sorted(date_counts.items())
+    
+    # [cite_start]Print in the required format [cite: 36, 93-95]
+    for date, count in sorted_date_counts:
+        print(f"{date} {count}")
+
+    # === END: New block ===
     sc.stop()
 
 if __name__ == "__main__":
