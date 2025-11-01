@@ -48,7 +48,6 @@ def main():
     # 1️⃣ Spark setup
     conf = SparkConf().setAppName("DeadlockDetection").setMaster("local[*]")
     sc = SparkContext(conf=conf)
-
     sc.setLogLevel("ERROR")
 
     # 2️⃣ RAG construction placeholder
@@ -91,7 +90,15 @@ def main():
         f.write(output)
 
     # 3️⃣ Cycle detection placeholder
-    # TODO: Phase 3
+    # 1️⃣ Build adjacency list: node -> list of neighbors
+    # Example: (P105, R024) => P105 : [R024]
+    adj_rdd = edges_rdd.groupByKey().mapValues(list)
+    # adj_rdd.collect()  # for testing, but avoid on huge datasets
+
+    # 2️⃣ Initialize paths as direct edges
+    # Each path is a list of nodes [source, destination]
+    paths_rdd = edges_rdd.map(lambda x: [x[0], x[1]])
+
 
     # 4️⃣ Metrics reporting placeholder
     # TODO: Phase 4 & 5
