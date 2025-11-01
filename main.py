@@ -3,13 +3,6 @@ import time
 from pyspark import SparkContext, SparkConf
 import os
 
-# def parse_line(line):
-#     parts = line.strip().split()
-#     if len(parts) != 4:
-#         return None
-#     timestamp, level, process_id, resource_id = parts
-#     return timestamp, level, process_id, resource_id
-
 def parse_line(line):
     parts = line.strip().split()
     
@@ -59,19 +52,6 @@ def extend_paths(path, adj_dict):
             extensions.append(path + [neighbor])
     return extensions
 
-# def normalize_cycle(cycle):
-#     """
-#     Rotate cycle so that the smallest node (lexicographically) is first.
-#     This helps deduplicate cycles that are the same but start at different nodes.
-#     """
-#     cycle = list(cycle)
-#     n = len(cycle)
-#     # Find the index of the smallest node
-#     min_index = min(range(n), key=lambda i: cycle[i])
-#     # Rotate
-#     normalized = cycle[min_index:] + cycle[:min_index]
-#     return tuple(normalized)
-
 def normalize_cycle(cycle):
     """
     Rotate cycle so that the smallest node (lexicographically) is first.
@@ -90,7 +70,7 @@ def normalize_cycle(cycle):
     return tuple(normalized)
 
 def main():
-    start_time = time.time()
+    # start_time = time.time()
 
     # 1️⃣ Spark setup
     conf = SparkConf().setAppName("DeadlockDetection").setMaster("local[*]")
@@ -111,9 +91,7 @@ def main():
     # print(f"Total lines in log file: {lines_rdd.count()}")
 
     parsed_rdd = lines_rdd.map(parse_line).filter(lambda x: x is not None)
-    # print(f"Total valid lines: {parsed_rdd.count()}")
     edges_rdd = parsed_rdd.map(create_edge).filter(lambda x: x is not None).distinct()
-    # print(f"Total unique edges: {edges_rdd.count()}")
 
     # Extract all nodes
     nodes_rdd = edges_rdd.flatMap(lambda x: x)
@@ -132,20 +110,14 @@ def main():
     print(resource_count)
     print(edge_count)
 
-    output = f"{process_count}\n{resource_count}\n{edge_count}\n"
-    with open("metrics_output.txt", "w") as f:
-        f.write(output)
-
     # 3️⃣ Cycle detection placeholder
     # 1️⃣ Build adjacency list: node -> list of neighbors
     # Example: (P105, R024) => P105 : [R024]
     adj_rdd = edges_rdd.groupByKey().mapValues(list)
-    # adj_rdd.collect()  # for testing, but avoid on huge datasets
+    q2_start_time = time.time()
 
     # 2️⃣ Initialize paths as direct edges
-    # Each path is a list of nodes [source, destination]
-    # paths_rdd = edges_rdd.map(lambda x: [x[0], x[1]])
-
+    # Each path is a list of nodes [source, destination
     # changing path_rdd logic
     paths_rdd = edges_rdd.filter(lambda x: x[0].startswith("P")).map(lambda x: [x[0], x[1]])
 
@@ -156,46 +128,13 @@ def main():
     MAX_PATH_LEN = 25
 
     # Convert adjacency RDD to dictionary for efficient lookup
-    # adj_dict = dict(adj_rdd.collect())  # small enough for local usage
-    # changing
     adj_rdd = edges_rdd.groupByKey().mapValues(lambda lst: list(set(lst)))
     adj_dict = dict(adj_rdd.collect())
-
-    # Initialize paths with direct edges
-    # current_paths = paths_rdd.collect()  # list of lists
-
-    # all_cycles = set()  # to store detected cycles as tuples
-
-    # for step in range(MAX_PATH_LEN):
-    #     new_paths = []
-    #     for path in current_paths:
-    #         last_node = path[-1]
-    #         if last_node in adj_dict:
-    #             for neighbor in adj_dict[last_node]:
-    #                 if neighbor == path[0]:
-    #                     # Cycle detected
-    #                     all_cycles.add(tuple(path + [neighbor]))
-    #                 elif neighbor not in path:
-    #                     new_paths.append(path + [neighbor])
-    #     # Stop if no new paths to extend
-    #     if not new_paths:
-    #         break
-    #     current_paths = new_paths
     all_cycles = set()
     current_paths = paths_rdd.collect()  # list of lists
 
     for step in range(MAX_PATH_LEN):
         new_paths = []
-        # for path in current_paths:
-        #     last_node = path[-1]
-        #     for neighbor in adj_dict.get(last_node, []):
-        #         if neighbor == path[0]:
-        #             # Cycle completed → add it
-        #             all_cycles.add(tuple(path + [neighbor]))
-        #             # Do NOT extend further
-        #         elif neighbor not in path:
-        #             # Only extend if neighbor is NOT in path at all
-        #             new_paths.append(path + [neighbor])
         for path in current_paths:
             last_node = path[-1]
             for neighbor in adj_dict.get(last_node, []):
@@ -210,9 +149,6 @@ def main():
         if not new_paths:
             break
         current_paths = new_paths
-        # print(f"Step {step}, paths: {current_paths}")
-
-    print(f"Total raw cycles found: {len(all_cycles)}")
 
     # Normalize all cycles
     normalized_cycles = [normalize_cycle(c) for c in all_cycles]
@@ -223,13 +159,6 @@ def main():
     # Sort: first by length, then lexicographically
     unique_cycles.sort(key=lambda x: (len(x), x))
 
-    # Print deadlock count
-    print(len(unique_cycles))
-
-    # Print each cycle in the required format (space-separated)
-    for cycle in unique_cycles:
-        print(" ".join(cycle))
-
     # Flatten all cycles and keep only process IDs
     process_set = set()
     for cycle in unique_cycles:
@@ -239,6 +168,15 @@ def main():
 
     # Sort alphabetically
     sorted_processes = sorted(process_set)
+    q2_duration = time.time() - q2_start_time
+    print(round(q2_duration, 2))
+
+    # Print deadlock count
+    print(len(unique_cycles))
+
+    # Print each cycle in the required format (space-separated)
+    for cycle in unique_cycles:
+        print(" ".join(cycle))
 
     # Print total unique process count
     print(len(sorted_processes))
@@ -248,10 +186,7 @@ def main():
 
     # 4️⃣ Metrics reporting placeholder
     # TODO: Phase 4 & 5
-
     sc.stop()
-    end_time = time.time()
-    print(round(end_time - start_time, 2))  # execution time
 
 if __name__ == "__main__":
     main()
