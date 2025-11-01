@@ -1,0 +1,12 @@
+# Ignore the virtual environment folder
+venv/
+
+# Ignore the large dataset log
+hpc_rag.log
+
+# Ignore generated output files
+metrics_output.txt
+report.pdf
+
+# Ignore Python cache files
+__pycache__/
