@@ -111,7 +111,6 @@ def main():
     parsed_rdd = lines_rdd.map(parse_line).filter(lambda x: x is not None)
     #phase 4 modification
     timestamped_edges_rdd = parsed_rdd.map(create_edge).filter(lambda x: x is not None)
-    # [cite_start]# [cite: 35]
     edge_with_latest_timestamp_rdd = timestamped_edges_rdd.reduceByKey(lambda ts1, ts2: max(ts1, ts2))
     # edges_rdd = parsed_rdd.map(create_edge).filter(lambda x: x is not None).distinct()
     edges_rdd = edge_with_latest_timestamp_rdd.keys().distinct()
@@ -235,7 +234,6 @@ def main():
             # Find the latest timestamp for this edge
             edge_ts = edge_timestamp_map.get(edge)
             
-            # [cite_start]Find the max (latest) timestamp among all edges in this cycle [cite: 35]
             if edge_ts and edge_ts > latest_ts_in_cycle:
                 latest_ts_in_cycle = edge_ts
         
@@ -244,17 +242,49 @@ def main():
             formation_date = latest_ts_in_cycle.split()[0]
             formation_dates.append(formation_date)
 
-    # [cite_start]Count the frequencies of each date [cite: 36]
     date_counts = Counter(formation_dates)
     
-    # [cite_start]Sort by date (chronologically) [cite: 111]
     sorted_date_counts = sorted(date_counts.items())
     
-    # [cite_start]Print in the required format [cite: 36, 93-95]
     for date, count in sorted_date_counts:
         print(f"{date} {count}")
 
     # === END: New block ===
+
+    # 5️⃣ Graph Structure Analysis (Q4)
+    
+    # Per Q4, we are interested in "processes requesting" (in-degree for R)
+    # and "processes waiting for" (out-degree for P).
+    # Both of these are derived *only* from Request Edges (P -> R). 
+    request_edges_rdd = edges_rdd.filter(lambda x: x[0].startswith("P"))
+
+    # 5.1 Compute Degrees 
+    
+    # Q4.1: Top 5 Resources (highest in-degree)
+    # In-degree for a resource = count of P -> R edges pointing to it.
+    # We map (Process, Resource) -> (Resource, 1) and sum them up.
+    resource_in_degree = request_edges_rdd.map(lambda x: (x[1], 1)) \
+                                        .reduceByKey(lambda a, b: a + b)
+    
+    # Q4.2: Top 5 Processes (highest out-degree)
+    # Out-degree for a process = count of P -> R edges starting from it.
+    # We map (Process, Resource) -> (Process, 1) and sum them up.
+    process_out_degree = request_edges_rdd.map(lambda x: (x[0], 1)) \
+                                        .reduceByKey(lambda a, b: a + b)
+
+    # 5.2 Print Top 5
+    
+    # Sort: 1st by count (descending), 2nd by ID (ascending) 
+    # We use -x[1] to make the count sort descending.
+    top_5_resources = resource_in_degree.sortBy(lambda x: (-x[1], x[0])).take(5)
+    top_5_processes = process_out_degree.sortBy(lambda x: (-x[1], x[0])).take(5)
+
+    # Print in the required format 
+    for resource, count in top_5_resources:
+        print(f"{resource} {count}")
+    
+    for process, count in top_5_processes:
+        print(f"{process} {count}")
     sc.stop()
 
 if __name__ == "__main__":
