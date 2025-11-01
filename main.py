@@ -59,6 +59,19 @@ def extend_paths(path, adj_dict):
             extensions.append(path + [neighbor])
     return extensions
 
+def normalize_cycle(cycle):
+    """
+    Rotate cycle so that the smallest node (lexicographically) is first.
+    This helps deduplicate cycles that are the same but start at different nodes.
+    """
+    cycle = list(cycle)
+    n = len(cycle)
+    # Find the index of the smallest node
+    min_index = min(range(n), key=lambda i: cycle[i])
+    # Rotate
+    normalized = cycle[min_index:] + cycle[:min_index]
+    return tuple(normalized)
+
 def main():
     start_time = time.time()
 
@@ -117,6 +130,8 @@ def main():
     paths_rdd = edges_rdd.map(lambda x: [x[0], x[1]])
 
     # Max path length to prevent infinite loops
+    # ⚠️ Note: This approach works if the graph isn’t huge (≤50,000 edges). For a true MapReduce scalable solution, we would propagate paths using RDD transformations instead of collecting everything locally. But for assignment purposes, this logic is enough and simpler to debug.
+
     MAX_PATH_LEN = 25
 
     # Convert adjacency RDD to dictionary for efficient lookup
@@ -144,6 +159,22 @@ def main():
         current_paths = new_paths
 
     print(f"Total raw cycles found: {len(all_cycles)}")
+
+    # Normalize all cycles
+    normalized_cycles = [normalize_cycle(c) for c in all_cycles]
+
+    # Deduplicate
+    unique_cycles = list(set(normalized_cycles))
+
+    # Sort: first by length, then lexicographically
+    unique_cycles.sort(key=lambda x: (len(x), x))
+
+    # Print deadlock count
+    print(len(unique_cycles))
+
+    # Print each cycle in the required format (space-separated)
+    for cycle in unique_cycles:
+        print(" ".join(cycle))
 
     # 4️⃣ Metrics reporting placeholder
     # TODO: Phase 4 & 5
