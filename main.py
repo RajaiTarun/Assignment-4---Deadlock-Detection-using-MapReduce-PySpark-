@@ -41,6 +41,23 @@ def create_edge(entry):
         return (resource_id, process_id)
     else:
         return None
+    
+
+def extend_paths(path, adj_dict):
+    """
+    Extend a path by one step using the adjacency list.
+    Avoid revisiting nodes to prevent infinite loops.
+    """
+    last_node = path[-1]
+    extensions = []
+
+    for neighbor in adj_dict.get(last_node, []):
+        if neighbor not in path:  # avoid revisits
+            extensions.append(path + [neighbor])
+        else:
+            # Cycle detected, but we keep full cycles for later
+            extensions.append(path + [neighbor])
+    return extensions
 
 def main():
     start_time = time.time()
@@ -99,6 +116,34 @@ def main():
     # Each path is a list of nodes [source, destination]
     paths_rdd = edges_rdd.map(lambda x: [x[0], x[1]])
 
+    # Max path length to prevent infinite loops
+    MAX_PATH_LEN = 25
+
+    # Convert adjacency RDD to dictionary for efficient lookup
+    adj_dict = dict(adj_rdd.collect())  # small enough for local usage
+
+    # Initialize paths with direct edges
+    current_paths = paths_rdd.collect()  # list of lists
+
+    all_cycles = set()  # to store detected cycles as tuples
+
+    for step in range(MAX_PATH_LEN):
+        new_paths = []
+        for path in current_paths:
+            last_node = path[-1]
+            if last_node in adj_dict:
+                for neighbor in adj_dict[last_node]:
+                    if neighbor == path[0]:
+                        # Cycle detected
+                        all_cycles.add(tuple(path + [neighbor]))
+                    elif neighbor not in path:
+                        new_paths.append(path + [neighbor])
+        # Stop if no new paths to extend
+        if not new_paths:
+            break
+        current_paths = new_paths
+
+    print(f"Total raw cycles found: {len(all_cycles)}")
 
     # 4️⃣ Metrics reporting placeholder
     # TODO: Phase 4 & 5
